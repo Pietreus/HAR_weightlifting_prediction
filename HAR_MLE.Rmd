@@ -143,12 +143,3 @@ predict(rffit,validation)
 
 The predictions by both models are identical, which reinforces the confidence in these predictions. 
 
-
-
-## Conclustion
-
-
-
-TODO: 
-Interpret results, say classifiers are extremely efficient. 
-update intro
