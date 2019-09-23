@@ -1,0 +1,154 @@
+---
+title: "Prediction Assignment"
+author: "Peter Blohm"
+date: "23 August 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+
+
+
+The aim of this report is to find a model, which reliably predicts how well certain weight lifting excercises are performed.
+This is made possible with the [HAR Weightlifting dataset](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har), which consists of various accelerometric measurements during weightlifting excercises. These exersices were overseen overseen by experts, who classified the execution of the exercise. Class A refers to flawless execution, whereas B to E correspond to common mistakes.
+The two chosen models for this problem perform with very high accuracy and provided the same prediction for the validation dataset.
+
+
+
+## The Data
+
+
+```{r data, cache = TRUE}
+
+datafile <- "./data/pml-training.csv"
+validfile <- "./data/pml-testing.csv"
+
+if(!file.exists(datafile) | !file.exists(validfile)){
+    
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = datafile)
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = validfile)
+}
+
+fulldata <- read.csv(datafile)
+validation <- read.csv(validfile)
+
+```
+
+
+To prepare the dataset for processing, at first it will be split into a training and testing set.
+
+Afterwards certain columns will be omitted. 
+Since many columns seem to have systematically missing entries, imputation is no option.
+Additionally, columns without variance will be omitted aswell, since they dont have any predictive power. 
+Lastly the first five columns are excluded because they contain identification values or other metadata.
+Ignoring all these variables can increase the performance of the models as well as decreasing variance.
+
+```{r preprocessing}
+library(caret)
+
+set.seed(123)
+inTrain = createDataPartition(fulldata$classe, p = 0.75)[[1]]
+training <- fulldata[inTrain,]
+testing <- fulldata[-inTrain,]
+
+#remove NA columns
+misscol <- which(sapply(1:160,function(x){any(is.na(training[,x]))}))
+
+#Include only columns with significant variance
+novarcol <- nearZeroVar(training)
+
+#ignore id columns: 1:5 as well as classe: 160
+usecols <- -c(misscol,novarcol,1:5,160)
+
+```
+
+
+## The model 
+
+For this Analysis, two different tree based models are fitted on the training data and compared in terms of accuracy and training speed. 
+
+To improve training Speed significantely, the libraries parallel and doParallel are used, to distribute computations across multiple cores of the machine. Since a Quad-Core machine with two hyperthreads (thus eight locial cores) is used, the computation is distributed evenly on seven threads. One Core is left for the OS so it stays responsive during the processing.
+
+Besides parallel processing the models will be trained with 5-Fold cross validation to increase their accuracy. This method takes the training set and splits it into five subsets. then each one of the subsets becomes the validation set in turn, and the model is trained on the other four sets. The crossvalidated model has greatly reduced bias and variance.
+
+```{r parallel, cache = TRUE}
+
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores()) #  1 core for OS
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv",
+                            number = 5,
+                            allowParallel = TRUE)
+
+```
+
+## Gradient Boosting Machine
+
+The first model used to predict the class is GBM, a gradient boosting model. This model is an ensemble of many weak prediction models, or more specifically simple decision trees. Using many weak models, the result is very accurate.
+
+```{r modelgbm}
+set.seed(123)
+gbmfit <- train(x = training[,usecols],y = training$classe, method = "gbm", trControl = fitControl)
+
+confusionMatrix(predict(gbmfit,testing[usecols]),testing$classe)
+
+```
+looking at the confuision matrix of the model, an astounding accuracy of `r confusionMatrix(predict(gbmfit,testing[usecols]),testing$classe)[[3]][1]` can be seen. However, since 20 Samples have to be predicted, a second model will be trained on the data for comparison.
+
+## Random Forest
+
+The Randomforest model "grows" multiple random decision trees at once, unlike gbm, which grows them one after the other to improve accuracy. This randomness helps with overfitting compared to GBM, however if the parameters of the gbm are tuned well, the gbm is likely to perform better. This however is outisde of the scope of this analysis.
+```{r modelrf}
+
+set.seed(456)
+rffit <- train(x = training[,usecols],y = training$classe, method = "rf", trControl = fitControl)
+
+confusionMatrix(predict(rffit,testing[usecols]),testing$classe)
+
+```
+The random forest shows to have an even better accuracy, with only 6 mistakes over the testing set.
+
+
+After the models have been fitted, it is important to stop the processing Cluster and force R to run on a single process again.
+
+```{r stop parallel}
+
+stopCluster(cluster)
+registerDoSEQ()
+
+
+``` 
+
+
+Both of the tested Classifiers are extremely accurate, to a point where, especially the Random Forest models prediction can be trusted for the validation set. 
+
+## Conclusion
+
+Both, gradient boosting and random forest have been proven to work extremely well on the given dataset. 
+Using their predictions, the validation set for the final assignment can be predicted with high confidence.
+
+
+```{r validation}
+
+predict(gbmfit,validation)
+predict(rffit,validation)
+
+```
+
+The predictions by both models are identical, which reinforces the confidence in these predictions. 
+
+
+
+## Conclustion
+
+
+
+TODO: 
+Interpret results, say classifiers are extremely efficient. 
+update intro
